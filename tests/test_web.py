@@ -21,10 +21,7 @@ def base(tmp_path):
 
 def pedir(url, metodo="GET", datos=None, texto=None, tipo_texto="text/plain", cabeceras=None):
     """Devuelve (código, cabeceras, cuerpo) sin lanzar excepciones por códigos de error."""
-    if datos is not None:
-        cuerpo = json.dumps(datos).encode("utf-8")
-    else:
-        cuerpo = texto
+    cuerpo = json.dumps(datos).encode("utf-8") if datos is not None else texto
     peticion = urllib.request.Request(url, data=cuerpo, method=metodo)
     if datos is not None:
         peticion.add_header("Content-Type", "application/json")
@@ -42,14 +39,27 @@ def pedir(url, metodo="GET", datos=None, texto=None, tipo_texto="text/plain", ca
 def cargar_datos_de_ejemplo(base):
     pedir(f"{base}/api/personas", "POST", {"id": "ana@x.com", "nombre": "Ana"})
     pedir(f"{base}/api/personas", "POST", {"id": "beto@x.com", "nombre": "Beto"})
-    pedir(f"{base}/api/canciones", "POST", {
-        "titulo": "Sol", "artista": "Ana", "isrc": "US-RC1-76-07839",
-        "colaboradores": [{"id": "ana@x.com", "pct": "50"}, {"id": "beto@x.com", "pct": "50"}],
-    })
-    pedir(f"{base}/api/eventos", "POST", {
-        "cancionId": 1, "tipo": "reproduccion", "fecha": "2026-03-10",
-        "cantidad": 1000, "tarifa": "0.0037",
-    })
+    pedir(
+        f"{base}/api/canciones",
+        "POST",
+        {
+            "titulo": "Sol",
+            "artista": "Ana",
+            "isrc": "US-RC1-76-07839",
+            "colaboradores": [{"id": "ana@x.com", "pct": "50"}, {"id": "beto@x.com", "pct": "50"}],
+        },
+    )
+    pedir(
+        f"{base}/api/eventos",
+        "POST",
+        {
+            "cancionId": 1,
+            "tipo": "reproduccion",
+            "fecha": "2026-03-10",
+            "cantidad": 1000,
+            "tarifa": "0.0037",
+        },
+    )
 
 
 def test_flujo_completo_por_api(base):
@@ -74,27 +84,45 @@ def test_canciones_y_eventos_se_listan_con_montos(base):
     assert canciones[0]["titulo"] == "Sol"
     assert canciones[0]["total"] == "3.70"
     assert eventos[0]["monto"] == "3.70"
-    assert {r["nombre"]: r["monto"] for r in eventos[0]["reparto"]} == {"Ana": "1.85", "Beto": "1.85"}
+    assert {r["nombre"]: r["monto"] for r in eventos[0]["reparto"]} == {
+        "Ana": "1.85",
+        "Beto": "1.85",
+    }
 
 
 def test_porcentajes_invalidos_devuelven_400_con_mensaje(base):
     pedir(f"{base}/api/personas", "POST", {"id": "ana@x.com", "nombre": "Ana"})
     pedir(f"{base}/api/personas", "POST", {"id": "beto@x.com", "nombre": "Beto"})
 
-    codigo, _, cuerpo = pedir(f"{base}/api/canciones", "POST", {
-        "titulo": "Sol", "artista": "Ana", "isrc": None,
-        "colaboradores": [{"id": "ana@x.com", "pct": "60"}, {"id": "beto@x.com", "pct": "39.99"}],
-    })
+    codigo, _, cuerpo = pedir(
+        f"{base}/api/canciones",
+        "POST",
+        {
+            "titulo": "Sol",
+            "artista": "Ana",
+            "isrc": None,
+            "colaboradores": [
+                {"id": "ana@x.com", "pct": "60"},
+                {"id": "beto@x.com", "pct": "39.99"},
+            ],
+        },
+    )
 
     assert codigo == 400
     assert "100" in json.loads(cuerpo)["error"]
 
 
 def test_colaborador_no_registrado_devuelve_400(base):
-    codigo, _, cuerpo = pedir(f"{base}/api/canciones", "POST", {
-        "titulo": "Sol", "artista": "Ana", "isrc": None,
-        "colaboradores": [{"id": "zoe@x.com", "pct": "100"}],
-    })
+    codigo, _, cuerpo = pedir(
+        f"{base}/api/canciones",
+        "POST",
+        {
+            "titulo": "Sol",
+            "artista": "Ana",
+            "isrc": None,
+            "colaboradores": [{"id": "zoe@x.com", "pct": "100"}],
+        },
+    )
 
     assert codigo == 400
     assert "no registrado" in json.loads(cuerpo)["error"]
@@ -107,8 +135,9 @@ def test_tipo_de_contenido_incorrecto_devuelve_415(base):
 
 
 def test_json_invalido_devuelve_400(base):
-    codigo, _, _ = pedir(f"{base}/api/personas", "POST", texto=b"{no es json",
-                         tipo_texto="application/json")
+    codigo, _, _ = pedir(
+        f"{base}/api/personas", "POST", texto=b"{no es json", tipo_texto="application/json"
+    )
 
     assert codigo == 400
 
@@ -193,15 +222,17 @@ def test_api_sin_clave_devuelve_401_cuando_hay_clave_configurada(base_con_clave)
 
 
 def test_api_con_clave_incorrecta_devuelve_401(base_con_clave):
-    codigo, _, _ = pedir(f"{base_con_clave}/api/personas",
-                         cabeceras={"Authorization": "Bearer otra"})
+    codigo, _, _ = pedir(
+        f"{base_con_clave}/api/personas", cabeceras={"Authorization": "Bearer otra"}
+    )
 
     assert codigo == 401
 
 
 def test_api_con_clave_correcta_funciona(base_con_clave):
-    codigo, _, _ = pedir(f"{base_con_clave}/api/personas",
-                         cabeceras={"Authorization": "Bearer secreta-de-prueba"})
+    codigo, _, _ = pedir(
+        f"{base_con_clave}/api/personas", cabeceras={"Authorization": "Bearer secreta-de-prueba"}
+    )
 
     assert codigo == 200
 

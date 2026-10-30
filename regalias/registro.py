@@ -3,7 +3,7 @@
 import datetime
 import re
 from decimal import Decimal
-from typing import List, Optional, Tuple
+from typing import Optional
 
 from regalias.dinero import CENTAVO, a_dinero, a_tasa, repartir
 
@@ -28,22 +28,18 @@ def clave_colaborador(identificador: str) -> str:
     return _limpiar(identificador, "el identificador").casefold()
 
 
-def validar_porcentajes(colaboradores: List[Tuple[str, Decimal]]) -> None:
-    """Exige porcentajes finitos entre 0 y 100, con máximo dos decimales, que sumen exactamente 100."""
+def validar_porcentajes(colaboradores: list[tuple[str, Decimal]]) -> None:
+    """Exige porcentajes finitos entre 0 y 100, con máximo dos decimales y suma 100."""
     for nombre, pct in colaboradores:
         if not pct.is_finite():
             raise ErrorRegistro(f"El porcentaje de '{nombre}' no es un número válido.")
         if pct < 0 or pct > 100:
             raise ErrorRegistro(f"El porcentaje de '{nombre}' debe estar entre 0 y 100.")
         if pct != pct.quantize(CENTAVO):
-            raise ErrorRegistro(
-                f"El porcentaje de '{nombre}' admite como máximo dos decimales."
-            )
+            raise ErrorRegistro(f"El porcentaje de '{nombre}' admite como máximo dos decimales.")
     suma = sum((pct for _, pct in colaboradores), Decimal("0"))
     if suma != Decimal("100"):
-        raise ErrorRegistro(
-            f"Los porcentajes deben sumar exactamente 100; suman {suma}."
-        )
+        raise ErrorRegistro(f"Los porcentajes deben sumar exactamente 100; suman {suma}.")
 
 
 def normalizar_isrc(isrc: Optional[str]) -> Optional[str]:
@@ -70,7 +66,7 @@ def registrar_cancion(
     titulo: str,
     artista: str,
     isrc: Optional[str],
-    colaboradores: List[Tuple[str, Decimal]],
+    colaboradores: list[tuple[str, Decimal]],
 ) -> int:
     """Valida y guarda una canción. Los colaboradores se identifican por su identificador."""
     if not titulo.strip() or not artista.strip():
@@ -93,9 +89,7 @@ def registrar_cancion(
                 f"Colaborador no registrado: '{clave}'. Regístralo primero con persona."
             )
         filas.append((clave, persona[1], pct))
-    return almacen.crear_cancion(
-        titulo.strip(), artista.strip(), isrc_normalizado, filas
-    )
+    return almacen.crear_cancion(titulo.strip(), artista.strip(), isrc_normalizado, filas)
 
 
 def registrar_reproducciones(

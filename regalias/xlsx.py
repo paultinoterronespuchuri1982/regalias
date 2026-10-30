@@ -8,7 +8,7 @@ proyecto necesita para exportar reportes.
 import io
 import zipfile
 from decimal import Decimal
-from typing import List, Union
+from typing import Union
 
 Celda = Union[str, int, float, Decimal]
 
@@ -57,18 +57,16 @@ def _celda(referencia: str, valor: Celda) -> str:
     return f'<c r="{referencia}" t="inlineStr"><is><t>{texto}</t></is></c>'
 
 
-def generar_xlsx(filas: List[List[Celda]]) -> bytes:
+def generar_xlsx(filas: list[list[Celda]]) -> bytes:
     """Devuelve el contenido de un .xlsx con una sola hoja y las filas dadas."""
     filas_xml = []
     for numero, fila in enumerate(filas, start=1):
-        celdas = "".join(
-            _celda(f"{_columna(i)}{numero}", valor) for i, valor in enumerate(fila)
-        )
+        celdas = "".join(_celda(f"{_columna(i)}{numero}", valor) for i, valor in enumerate(fila))
         filas_xml.append(f'<row r="{numero}">{celdas}</row>')
     hoja = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-        f'<sheetData>{"".join(filas_xml)}</sheetData></worksheet>'
+        f"<sheetData>{''.join(filas_xml)}</sheetData></worksheet>"
     )
 
     salida = io.BytesIO()

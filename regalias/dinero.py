@@ -1,7 +1,6 @@
 """Aritmética monetaria con Decimal y reparto exacto en centavos."""
 
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
-from typing import Dict, List, Tuple
 
 CENTAVO = Decimal("0.01")
 CIEN = Decimal("100")
@@ -16,7 +15,7 @@ def _decimal(valor: object, nombre: str) -> Decimal:
     try:
         numero = Decimal(valor)
     except InvalidOperation:
-        raise ValueError(f"{nombre.capitalize()} inválido: {valor!r}.")
+        raise ValueError(f"{nombre.capitalize()} inválido: {valor!r}.") from None
     if not numero.is_finite():
         raise ValueError(f"{nombre.capitalize()} debe ser un número finito.")
     return numero
@@ -28,7 +27,7 @@ def a_dinero(valor: object) -> Decimal:
     try:
         monto = numero.quantize(CENTAVO, rounding=ROUND_HALF_UP)
     except InvalidOperation:
-        raise ValueError("El monto es demasiado grande.")
+        raise ValueError("El monto es demasiado grande.") from None
     if monto < 0:
         raise ValueError("El monto no puede ser negativo.")
     return monto
@@ -42,7 +41,7 @@ def a_tasa(valor: object) -> Decimal:
     return tarifa
 
 
-def repartir(total: Decimal, partes: List[Tuple[str, Decimal]]) -> Dict[str, Decimal]:
+def repartir(total: Decimal, partes: list[tuple[str, Decimal]]) -> dict[str, Decimal]:
     """Reparte `total` según porcentajes, con la suma exacta igual al total.
 
     Cada parte recibe la porción entera en centavos (redondeo hacia abajo).
@@ -70,7 +69,4 @@ def repartir(total: Decimal, partes: List[Tuple[str, Decimal]]) -> Dict[str, Dec
     for i in orden[:sobrante]:
         extra[i] = 1
 
-    return {
-        clave: (base[i][1] + extra[i]) * CENTAVO
-        for i, (clave, _) in enumerate(exactos)
-    }
+    return {clave: (base[i][1] + extra[i]) * CENTAVO for i, (clave, _) in enumerate(exactos)}

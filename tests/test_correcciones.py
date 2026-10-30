@@ -83,7 +83,10 @@ def test_identificadores_se_comparan_sin_espacios_ni_mayusculas(almacen):
 def test_identificador_repetido_sin_distinguir_mayusculas_se_rechaza(almacen):
     with pytest.raises(ErrorRegistro):
         registrar_cancion(
-            almacen, "Sol", "Ana", None,
+            almacen,
+            "Sol",
+            "Ana",
+            None,
             [("ana@x.com", Decimal("50")), ("ANA@x.com ", Decimal("50"))],
         )
 

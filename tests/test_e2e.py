@@ -35,8 +35,10 @@ def navegador():
         navegador.close()
 
 
-def registrar_persona(pagina, identificador, nombre):
+def registrar_persona(pagina, identificador, nombre, existentes):
     pagina.click('button[data-tab="personas"]')
+    # Espera el contador esperado: la pestaña ya terminó de cargar sus datos.
+    pagina.wait_for_selector(f"text=Personas ({existentes})")
     pagina.fill("#p-id", identificador)
     pagina.fill("#p-nombre", nombre)
     pagina.click("#f-persona button[type=submit]")
@@ -51,9 +53,9 @@ def test_flujo_completo_en_el_navegador(base, navegador):
     # Espera a que termine la carga inicial de datos antes de escribir en los formularios.
     pagina.wait_for_selector("text=Personas (0)")
 
-    registrar_persona(pagina, "ana@x.com", "Ana")
-    registrar_persona(pagina, "beto@x.com", "Beto")
-    registrar_persona(pagina, "cami@x.com", "Cami")
+    registrar_persona(pagina, "ana@x.com", "Ana", 0)
+    registrar_persona(pagina, "beto@x.com", "Beto", 1)
+    registrar_persona(pagina, "cami@x.com", "Cami", 2)
 
     # Canción: 50 + 30.5 + 19.5 = 100, con el contador de suma en vivo.
     pagina.click('button[data-tab="canciones"]')

@@ -94,9 +94,7 @@ def test_reproduccion_con_cantidad_negativa_se_rechaza(almacen):
     cid = registrar_cancion(almacen, "Sol", "Ana", None, COLABORADORES)
 
     with pytest.raises(ValueError):
-        registrar_reproducciones(
-            almacen, cid, "2026-03-10", cantidad=-5, tarifa=Decimal("0.01")
-        )
+        registrar_reproducciones(almacen, cid, "2026-03-10", cantidad=-5, tarifa=Decimal("0.01"))
 
 
 def test_tarifa_flotante_se_rechaza_para_no_perder_exactitud(almacen):
@@ -119,9 +117,7 @@ def test_reporte_agrupa_ingresos_por_periodo(almacen):
 
 def test_suma_de_colaboradores_iguala_total_de_cancion(almacen):
     cid = registrar_cancion(almacen, "Sol", "Ana", None, COLABORADORES)
-    registrar_reproducciones(
-        almacen, cid, "2026-03-10", cantidad=1000, tarifa=Decimal("0.0037")
-    )
+    registrar_reproducciones(almacen, cid, "2026-03-10", cantidad=1000, tarifa=Decimal("0.0037"))
     registrar_venta(almacen, cid, "2026-03-12", Decimal("9.99"))
 
     por_colaborador = sum(

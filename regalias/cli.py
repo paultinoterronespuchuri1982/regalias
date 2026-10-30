@@ -3,7 +3,7 @@
 import argparse
 import sys
 from decimal import Decimal, InvalidOperation
-from typing import List, Optional, Tuple
+from typing import Optional
 
 from regalias.almacen import Almacen
 from regalias.registro import (
@@ -15,17 +15,18 @@ from regalias.registro import (
 from regalias.reportes import ingresos_por_colaborador
 
 
-def _colaborador(texto: str) -> Tuple[str, Decimal]:
+def _colaborador(texto: str) -> tuple[str, Decimal]:
     nombre, separador, pct = texto.rpartition(":")
     if not separador or not nombre:
         raise argparse.ArgumentTypeError("Use NOMBRE:PORCENTAJE")
     try:
         return nombre, Decimal(pct)
     except InvalidOperation:
-        raise argparse.ArgumentTypeError(f"Porcentaje inválido: '{pct}'")
+        raise argparse.ArgumentTypeError(f"Porcentaje inválido: '{pct}'") from None
 
 
 def construir_parser() -> argparse.ArgumentParser:
+    """Define los comandos de la línea de comandos y sus argumentos."""
     parser = argparse.ArgumentParser(prog="regalias")
     parser.add_argument("--db", default="regalias.sqlite", help="archivo SQLite")
     comandos = parser.add_subparsers(dest="comando", required=True)
@@ -39,7 +40,10 @@ def construir_parser() -> argparse.ArgumentParser:
     cancion.add_argument("--artista", required=True)
     cancion.add_argument("--isrc")
     cancion.add_argument(
-        "--colaborador", action="append", type=_colaborador, required=True,
+        "--colaborador",
+        action="append",
+        type=_colaborador,
+        required=True,
         help="NOMBRE:PORCENTAJE (repetible)",
     )
 
@@ -60,7 +64,8 @@ def construir_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: Optional[list[str]] = None) -> int:
+    """Ejecuta un comando. Devuelve 0 si funciona y 1 si hay un error de negocio."""
     args = construir_parser().parse_args(argv)
     try:
         with Almacen(args.db) as almacen:
@@ -78,14 +83,10 @@ def main(argv: Optional[List[str]] = None) -> int:
                 )
                 print(f"Reproducciones registradas por {monto}.")
             elif args.comando == "venta":
-                monto = registrar_venta(
-                    almacen, args.cancion, args.fecha, args.precio
-                )
+                monto = registrar_venta(almacen, args.cancion, args.fecha, args.precio)
                 print(f"Venta registrada por {monto}.")
             elif args.comando == "reporte":
-                for periodo, monto in ingresos_por_colaborador(
-                    almacen, args.colaborador
-                ).items():
+                for periodo, monto in ingresos_por_colaborador(almacen, args.colaborador).items():
                     print(f"{periodo}  {monto}")
     except (ValueError, TypeError, InvalidOperation) as error:
         print(f"Error: {error}", file=sys.stderr)

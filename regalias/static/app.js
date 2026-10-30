@@ -79,17 +79,24 @@ function enviar(ruta, datos) {
   return api(ruta, { method: 'POST', body: JSON.stringify(datos) });
 }
 
+// Cada carga tiene un turno. Si una respuesta vieja llega después de una carga más
+// reciente, se descarta para no mostrar datos anteriores.
+let ultimaCarga = 0;
+
 async function cargarTodo() {
+  const turno = ++ultimaCarga;
   const [personas, canciones, eventos] = await Promise.all([
     api('/api/personas'), api('/api/canciones'), api('/api/eventos'),
   ]);
+  if (turno !== ultimaCarga) return;
   Object.assign(estado, { personas, canciones, eventos });
   if (!personas.some((p) => p.id === estado.personaReporte)) {
     estado.personaReporte = personas.length ? personas[0].id : null;
   }
-  estado.reporte = estado.personaReporte
+  const reporte = estado.personaReporte
     ? await api(`/api/reporte?persona=${encodeURIComponent(estado.personaReporte)}`)
     : null;
+  if (turno === ultimaCarga) estado.reporte = reporte;
 }
 
 function mensaje() {
@@ -303,6 +310,17 @@ function pintar({ limpiar = false } = {}) {
   conectar();
 }
 
+// Solo se repinta si cambian los datos o la pestaña. Así una recarga sin novedades no
+// reemplaza un formulario que el usuario está llenando.
+let firmaVista = '';
+
+function firmaActual() {
+  return JSON.stringify([
+    estado.personas, estado.canciones, estado.eventos, estado.reporte,
+    estado.personaReporte, estado.tab,
+  ]);
+}
+
 async function refrescar() {
   try {
     await cargarTodo();
@@ -314,7 +332,12 @@ async function refrescar() {
     } else {
       avisar(error.message, 'err');
     }
+    firmaVista = '';
+    pintar();
+    return;
   }
+  if (firmaActual() === firmaVista) return;
+  firmaVista = firmaActual();
   pintar();
 }
 
@@ -323,7 +346,12 @@ function leerForm(form) {
 }
 
 // Cada acción envía al servidor y, si funciona, vuelve a cargar todos los datos.
+// Evita enviar dos veces la misma acción si el usuario hace doble clic.
+let accionEnCurso = false;
+
 async function accion(fn, textoOk) {
+  if (accionEnCurso) return;
+  accionEnCurso = true;
   try {
     await fn();
     if (textoOk) avisar(textoOk);
@@ -332,6 +360,8 @@ async function accion(fn, textoOk) {
   } catch (error) {
     avisar(error.message, 'err');
     pintar();
+  } finally {
+    accionEnCurso = false;
   }
 }
 
@@ -436,11 +466,14 @@ function conectar() {
 
 // La vista se pinta al instante para que lo que el usuario escribe no se pierda
 // por un repintado tardío; después se actualizan los datos desde el servidor.
+// Al cambiar de pestaña, la vista nueva ya está pintada: se marca como vigente para que
+// la recarga no la reemplace si no trae cambios.
 document.querySelectorAll('.tab[data-tab]').forEach((b) =>
   b.addEventListener('click', () => {
     estado.tab = b.dataset.tab;
     avisar('');
     pintar();
+    firmaVista = firmaActual();
     refrescar();
   }));
 
