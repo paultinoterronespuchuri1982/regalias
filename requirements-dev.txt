@@ -1,0 +1,6 @@
+# Dependencias de desarrollo y pruebas. La aplicación no necesita ninguna en tiempo de ejecución.
+bandit==1.9.4
+openpyxl==3.1.5
+playwright==1.64.1
+pip-audit==2.10.1
+pytest==9.2.0

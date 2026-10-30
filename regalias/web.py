@@ -10,8 +10,10 @@ Seguridad:
 
 import argparse
 import csv
+import hmac
 import io
 import json
+import os
 import sys
 import traceback
 from decimal import Decimal, InvalidOperation
@@ -30,6 +32,7 @@ from regalias.registro import (
     registrar_venta,
 )
 from regalias.reportes import ingresos_por_colaborador, total_cancion
+from regalias.xlsx import generar_xlsx
 
 ESTATICO = Path(__file__).parent / "static"
 ARCHIVOS = {
@@ -39,6 +42,7 @@ ARCHIVOS = {
 }
 LIMITE_CUERPO = 64 * 1024
 HOSTS_PERMITIDOS = {"127.0.0.1", "localhost"}
+HOSTS_LOCALES = {"127.0.0.1", "localhost", "::1"}
 CABECERAS_SEGURIDAD = {
     "Content-Security-Policy": (
         "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
@@ -172,6 +176,10 @@ class Manejador(BaseHTTPRequestHandler):
             if metodo == "GET" and ruta.path in ARCHIVOS:
                 return self._enviar_archivo(ruta.path)
             if ruta.path.startswith("/api/"):
+                if not self._clave_valida():
+                    return self._enviar_json(
+                        401, {"error": "Clave requerida o incorrecta."},
+                        {"WWW-Authenticate": "Bearer"})
                 return self._api(metodo, ruta)
             raise PeticionInvalida(404, "No existe esa ruta.")
         except PeticionInvalida as error:
@@ -221,13 +229,13 @@ class Manejador(BaseHTTPRequestHandler):
             tipo = _texto(datos, "tipo")
             fecha = _texto(datos, "fecha")
             if tipo == "reproduccion":
-                registrar_reproducciones(almacen, cancion_id, fecha,
-                                         _entero(datos, "cantidad"), _texto(datos, "tarifa"))
+                monto = registrar_reproducciones(almacen, cancion_id, fecha,
+                                                 _entero(datos, "cantidad"), _texto(datos, "tarifa"))
             elif tipo == "venta":
-                registrar_venta(almacen, cancion_id, fecha, _texto(datos, "precio"))
+                monto = registrar_venta(almacen, cancion_id, fecha, _texto(datos, "precio"))
             else:
                 raise PeticionInvalida(400, "'tipo' debe ser 'reproduccion' o 'venta'.")
-            return self._enviar_json(201, {"ok": True})
+            return self._enviar_json(201, {"monto": dinero(monto)})
 
         if clave == ("GET", "/api/reporte"):
             return self._enviar_json(200, reporte_persona(almacen, self._persona_consulta(consulta)))
@@ -235,6 +243,16 @@ class Manejador(BaseHTTPRequestHandler):
             texto = reporte_csv(almacen, self._persona_consulta(consulta))
             return self._enviar(200, texto.encode("utf-8"), "text/csv; charset=utf-8",
                                 {"Content-Disposition": 'attachment; filename="reporte.csv"'})
+        if clave == ("GET", "/api/reporte.xlsx"):
+            reporte = reporte_persona(almacen, self._persona_consulta(consulta))
+            filas = [["Mes", "Ingresos"]]
+            filas += [[p["periodo"], float(p["monto"])] for p in reporte["periodos"]]
+            filas.append(["Total", float(reporte["total"])])
+            return self._enviar(
+                200, generar_xlsx(filas),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                {"Content-Disposition": 'attachment; filename="reporte.xlsx"'},
+            )
 
         raise PeticionInvalida(404, "No existe esa ruta.")
 
@@ -243,6 +261,15 @@ class Manejador(BaseHTTPRequestHandler):
         if not valores[0].strip():
             raise PeticionInvalida(400, "Falta el parámetro 'persona'.")
         return valores[0]
+
+    def _clave_valida(self) -> bool:
+        """Sin clave configurada, la API está abierta (solo en 127.0.0.1)."""
+        clave = self.server.clave
+        if not clave:
+            return True
+        encabezado = self.headers.get("Authorization", "")
+        recibida = encabezado[len("Bearer "):] if encabezado.startswith("Bearer ") else ""
+        return hmac.compare_digest(recibida.encode("utf-8"), clave.encode("utf-8"))
 
     def _host_permitido(self) -> bool:
         host = self.headers.get("Host", "")
@@ -272,9 +299,9 @@ class Manejador(BaseHTTPRequestHandler):
         nombre, tipo = ARCHIVOS[ruta]
         self._enviar(200, (ESTATICO / nombre).read_bytes(), tipo)
 
-    def _enviar_json(self, codigo: int, datos) -> None:
+    def _enviar_json(self, codigo: int, datos, extra: Optional[Dict[str, str]] = None) -> None:
         cuerpo = json.dumps(datos, ensure_ascii=False).encode("utf-8")
-        self._enviar(codigo, cuerpo, "application/json; charset=utf-8")
+        self._enviar(codigo, cuerpo, "application/json; charset=utf-8", extra)
 
     def _enviar(self, codigo: int, cuerpo: bytes, tipo: str,
                 extra: Optional[Dict[str, str]] = None) -> None:
@@ -288,9 +315,13 @@ class Manejador(BaseHTTPRequestHandler):
         self.wfile.write(cuerpo)
 
 
-def crear_servidor(ruta_db: str, puerto: int = 8765) -> HTTPServer:
-    servidor = HTTPServer(("127.0.0.1", puerto), Manejador)
+def crear_servidor(ruta_db: str, puerto: int = 8765, clave: Optional[str] = None,
+                   host: str = "127.0.0.1") -> HTTPServer:
+    if host not in HOSTS_LOCALES and not clave:
+        raise ValueError("Para escuchar fuera de 127.0.0.1 hay que definir una clave (--clave o REGALIAS_CLAVE).")
+    servidor = HTTPServer((host, puerto), Manejador)
     servidor.almacen = Almacen(ruta_db)
+    servidor.clave = clave or None
     return servidor
 
 
@@ -298,10 +329,20 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="regalias-web")
     parser.add_argument("--db", default="regalias.sqlite", help="archivo SQLite")
     parser.add_argument("--puerto", type=int, default=8765)
+    parser.add_argument("--host", default="127.0.0.1",
+                        help="dirección de escucha; usa 0.0.0.0 solo con clave (p. ej. en Docker)")
+    parser.add_argument("--clave", default=os.environ.get("REGALIAS_CLAVE"),
+                        help="clave para usar la API (también puede ir en REGALIAS_CLAVE)")
     args = parser.parse_args(argv)
 
-    servidor = crear_servidor(args.db, args.puerto)
-    print(f"Regalías en http://127.0.0.1:{args.puerto}  (Ctrl+C para detener)")
+    try:
+        servidor = crear_servidor(args.db, args.puerto, args.clave, args.host)
+    except ValueError as error:
+        print(f"Error: {error}", file=sys.stderr)
+        return 1
+    if args.clave:
+        print("Clave requerida: ingrésala en la página para usar la aplicación.")
+    print(f"Regalías en http://{args.host}:{args.puerto}  (Ctrl+C para detener)")
     try:
         servidor.serve_forever()
     except KeyboardInterrupt:

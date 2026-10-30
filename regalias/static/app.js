@@ -8,6 +8,7 @@ const estado = {
   eventos: [],
   personaReporte: null,
   reporte: null,
+  necesitaClave: false,
   borrador: [],
   aviso: '',
   avisoTipo: 'ok',
@@ -30,16 +31,48 @@ function hoy() {
   return new Date().toISOString().slice(0, 10);
 }
 
+// La clave, si el servidor la pide, vive solo en sessionStorage: se borra al cerrar la pestaña.
+function claveGuardada() {
+  try {
+    return sessionStorage.getItem('regaliasClave') || '';
+  } catch (error) {
+    return '';
+  }
+}
+
+function cabecerasAutorizacion() {
+  const clave = claveGuardada();
+  return clave ? { Authorization: `Bearer ${clave}` } : {};
+}
+
 async function api(ruta, opciones = {}) {
   const respuesta = await fetch(ruta, {
     ...opciones,
-    headers: { 'Content-Type': 'application/json', ...(opciones.headers || {}) },
+    headers: { 'Content-Type': 'application/json', ...cabecerasAutorizacion(), ...(opciones.headers || {}) },
   });
   const datos = await respuesta.json().catch(() => ({}));
   if (!respuesta.ok) {
-    throw new Error(datos.error || `Error ${respuesta.status}`);
+    const error = new Error(datos.error || `Error ${respuesta.status}`);
+    error.status = respuesta.status;
+    throw error;
   }
   return datos;
+}
+
+// Los enlaces no pueden enviar la clave, así que las descargas se piden con fetch.
+async function descargar(ruta, nombre) {
+  const respuesta = await fetch(ruta, { headers: cabecerasAutorizacion() });
+  if (!respuesta.ok) {
+    throw new Error('No se pudo descargar el reporte.');
+  }
+  const url = URL.createObjectURL(await respuesta.blob());
+  const enlace = document.createElement('a');
+  enlace.href = url;
+  enlace.download = nombre;
+  document.body.appendChild(enlace);
+  enlace.click();
+  enlace.remove();
+  URL.revokeObjectURL(url);
 }
 
 function enviar(ruta, datos) {
@@ -193,13 +226,28 @@ function vistaEventos() {
   </div>`;
 }
 
+function vistaAcceso() {
+  return `
+  <section class="card">
+    <h2>Clave de acceso</h2>
+    <p class="sub">Este servidor pide una clave. Quien lo inició la define con REGALIAS_CLAVE o --clave.</p>
+    <form id="f-clave">
+      <label for="k-clave">Clave</label>
+      <input id="k-clave" type="password" autocomplete="current-password" required>
+      <button class="btn" type="submit">Entrar</button>
+    </form>
+    ${mensaje()}
+  </section>`;
+}
+
 function vistaReportes() {
   const r = estado.reporte;
   const filas = r ? r.periodos.map((p) =>
     `<tr><td>${esc(p.periodo)}</td><td class="num total">${esc(p.monto)}</td></tr>`).join('') : '';
-  const enlaceCsv = r
-    ? `<a class="enlace" href="/api/reporte.csv?persona=${encodeURIComponent(r.id)}" download>Descargar CSV</a>`
-    : '';
+  const enlaces = r ? `
+    <a class="enlace" href="/api/reporte.csv?persona=${encodeURIComponent(r.id)}" data-descarga="reporte.csv">Descargar CSV</a>
+    &nbsp;·&nbsp;
+    <a class="enlace" href="/api/reporte.xlsx?persona=${encodeURIComponent(r.id)}" data-descarga="reporte.xlsx">Descargar Excel</a>` : '';
   const cancionesFilas = estado.canciones.map((c) =>
     `<tr><td>${esc(c.titulo)}</td><td class="num">${esc(c.total)}</td></tr>`).join('');
   return `
@@ -213,7 +261,8 @@ function vistaReportes() {
         <tbody>${filas || '<tr><td colspan="2" class="vacio">Sin ingresos en ningún mes.</td></tr>'}</tbody>
         <tfoot><tr><td class="total">Total</td><td class="num total">${esc(r ? r.total : '0.00')}</td></tr></tfoot>
       </table></div>
-      <p>${enlaceCsv}</p>
+      <p>${enlaces}</p>
+      ${mensaje()}
     </section>
     <section class="card">
       <h2>Total por canción</h2>
@@ -232,18 +281,39 @@ const vistas = {
   reportes: vistaReportes,
 };
 
-function pintar() {
+// Al repintar se conserva lo que el usuario ya escribió en los campos de la vista.
+// Solo se limpian después de un envío exitoso.
+function pintar({ limpiar = false } = {}) {
+  if (estado.necesitaClave) {
+    vista.innerHTML = vistaAcceso();
+    conectar();
+    return;
+  }
+  const previos = {};
+  if (!limpiar) {
+    vista.querySelectorAll('input[id], select[id]').forEach((el) => { previos[el.id] = el.value; });
+  }
   document.querySelectorAll('.tab[data-tab]').forEach((b) =>
     b.setAttribute('aria-selected', String(b.dataset.tab === estado.tab)));
   vista.innerHTML = vistas[estado.tab]();
+  Object.entries(previos).forEach(([id, valor]) => {
+    const el = document.getElementById(id);
+    if (el) el.value = valor;
+  });
   conectar();
 }
 
 async function refrescar() {
   try {
     await cargarTodo();
+    estado.necesitaClave = false;
   } catch (error) {
-    avisar(error.message, 'err');
+    if (error.status === 401) {
+      estado.necesitaClave = true;
+      if (claveGuardada()) avisar('Clave incorrecta.', 'err');
+    } else {
+      avisar(error.message, 'err');
+    }
   }
   pintar();
 }
@@ -256,16 +326,36 @@ function leerForm(form) {
 async function accion(fn, textoOk) {
   try {
     await fn();
-    avisar(textoOk);
+    if (textoOk) avisar(textoOk);
     await cargarTodo();
+    pintar({ limpiar: true });
   } catch (error) {
     avisar(error.message, 'err');
+    pintar();
   }
-  pintar();
 }
 
 function conectar() {
   const form = (id) => document.getElementById(id);
+
+  form('f-clave')?.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    const clave = document.getElementById('k-clave').value;
+    try {
+      sessionStorage.setItem('regaliasClave', clave);
+    } catch (error) {
+      avisar('Este navegador no permite guardar la clave; no se podrá entrar.', 'err');
+    }
+    avisar('');
+    refrescar();
+  });
+
+  document.querySelectorAll('a[data-descarga]').forEach((enlace) =>
+    enlace.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      descargar(enlace.getAttribute('href'), enlace.dataset.descarga)
+        .catch((error) => avisar(error.message, 'err'));
+    }));
 
   form('f-persona')?.addEventListener('submit', (ev) => {
     ev.preventDefault();
@@ -332,7 +422,10 @@ function conectar() {
       datos.cantidad = Number(document.getElementById('e-cantidad').value);
       datos.tarifa = document.getElementById('e-tarifa').value.trim();
     }
-    accion(() => enviar('/api/eventos', datos), 'Ingreso registrado.');
+    accion(async () => {
+      const { monto } = await enviar('/api/eventos', datos);
+      avisar(`Ingreso registrado por ${monto}.`);
+    }, null);
   });
 
   form('r-persona')?.addEventListener('change', (ev) => {
@@ -341,10 +434,13 @@ function conectar() {
   });
 }
 
+// La vista se pinta al instante para que lo que el usuario escribe no se pierda
+// por un repintado tardío; después se actualizan los datos desde el servidor.
 document.querySelectorAll('.tab[data-tab]').forEach((b) =>
   b.addEventListener('click', () => {
     estado.tab = b.dataset.tab;
     avisar('');
+    pintar();
     refrescar();
   }));
 

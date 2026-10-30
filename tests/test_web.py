@@ -155,3 +155,67 @@ def test_ruta_inexistente_devuelve_404(base):
     codigo, _, _ = pedir(f"{base}/api/no-existe")
 
     assert codigo == 404
+
+
+def test_reporte_xlsx_se_descarga_y_se_puede_abrir(base, tmp_path):
+    openpyxl = pytest.importorskip("openpyxl")
+    cargar_datos_de_ejemplo(base)
+
+    codigo, cabeceras, cuerpo = pedir(f"{base}/api/reporte.xlsx?persona=beto@x.com")
+
+    assert codigo == 200
+    assert cabeceras["Content-Type"].startswith("application/vnd.openxmlformats")
+    archivo = tmp_path / "reporte.xlsx"
+    archivo.write_bytes(cuerpo)
+    hoja = openpyxl.load_workbook(archivo).active
+    assert [c.value for c in hoja[1]] == ["Mes", "Ingresos"]
+    assert [c.value for c in hoja[2]] == ["2026-03", 1.85]
+    assert [c.value for c in hoja[3]] == ["Total", 1.85]
+
+
+@pytest.fixture
+def base_con_clave(tmp_path):
+    servidor = crear_servidor(str(tmp_path / "clave.sqlite"), puerto=0, clave="secreta-de-prueba")
+    hilo = threading.Thread(target=servidor.serve_forever, daemon=True)
+    hilo.start()
+    yield f"http://127.0.0.1:{servidor.server_address[1]}"
+    servidor.shutdown()
+    servidor.server_close()
+    servidor.almacen.cerrar()
+
+
+def test_api_sin_clave_devuelve_401_cuando_hay_clave_configurada(base_con_clave):
+    codigo, cabeceras, cuerpo = pedir(f"{base_con_clave}/api/personas")
+
+    assert codigo == 401
+    assert cabeceras["WWW-Authenticate"] == "Bearer"
+    assert "Clave" in json.loads(cuerpo)["error"]
+
+
+def test_api_con_clave_incorrecta_devuelve_401(base_con_clave):
+    codigo, _, _ = pedir(f"{base_con_clave}/api/personas",
+                         cabeceras={"Authorization": "Bearer otra"})
+
+    assert codigo == 401
+
+
+def test_api_con_clave_correcta_funciona(base_con_clave):
+    codigo, _, _ = pedir(f"{base_con_clave}/api/personas",
+                         cabeceras={"Authorization": "Bearer secreta-de-prueba"})
+
+    assert codigo == 200
+
+
+def test_la_interfaz_carga_sin_clave_para_pedirla(base_con_clave):
+    codigo, _, _ = pedir(f"{base_con_clave}/")
+
+    assert codigo == 200
+
+
+def test_escuchar_fuera_de_localhost_sin_clave_se_rechaza(tmp_path, capsys):
+    from regalias.web import main
+
+    codigo = main(["--db", str(tmp_path / "x.sqlite"), "--host", "0.0.0.0", "--clave", ""])
+
+    assert codigo == 1
+    assert "clave" in capsys.readouterr().err.lower()
