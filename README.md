@@ -40,6 +40,19 @@ Todos los comandos aceptan `--db` para elegir el archivo SQLite (por defecto `re
 
 Los errores de negocio salen con código 1 y un mensaje explicando qué corregir.
 
+## Interfaz web
+
+```bash
+.venv/bin/python -m regalias.web --db regalias.sqlite
+```
+
+Abre http://127.0.0.1:8765 en tu navegador. Desde ahí puedes registrar personas,
+canciones e ingresos, ver los reportes por mes y descargar el reporte de una persona
+en CSV. Usa el mismo archivo SQLite que la línea de comandos.
+
+El servidor usa solo la biblioteca estándar de Python y escucha únicamente en
+`127.0.0.1`, así que no es accesible desde otras computadoras.
+
 ## Reglas de negocio
 
 - **Porcentajes:** entre 0 y 100, con máximo dos decimales, y la suma debe ser exactamente 100.
@@ -83,6 +96,11 @@ Las pruebas cubren las reglas de porcentajes, redondeo, reparto exacto, rechazo 
 
 - Todas las consultas SQL usan parámetros; no hay concatenación de texto en SQL.
 - `bandit` no reporta hallazgos sobre el código del paquete.
+- El servidor web escucha solo en `127.0.0.1` y rechaza peticiones cuyo `Host` no sea local, lo que protege contra ataques de DNS rebinding desde una página ajena.
+- Las escrituras exigen `Content-Type: application/json` y tienen un límite de 64 KB.
+- Las respuestas incluyen una Content-Security-Policy estricta (sin scripts ni estilos en línea de otros orígenes), `X-Frame-Options: DENY` y `nosniff`.
+- Los errores internos devuelven un mensaje genérico; el detalle solo aparece en la consola del servidor.
+- La interfaz muestra el texto escapado; no se inserta HTML proveniente de los datos.
 - La base de datos es un archivo local sin cifrar. Quien tenga acceso al archivo tiene acceso a los datos.
 - No hay autenticación: el programa confía en quien lo ejecuta en su computadora.
 - No está pensado para usarse como servicio web. Si algún día se expone en red, necesitará autenticación y control de acceso.
@@ -90,5 +108,6 @@ Las pruebas cubren las reglas de porcentajes, redondeo, reparto exacto, rechazo 
 ## Limitaciones
 
 - Una persona se identifica por su identificador. Si la misma persona tiene dos identificadores (por ejemplo, dos correos), aparecerá separada.
-- Solo hay interfaz de línea de comandos. No hay exportación a Excel ni a PDF.
+- La exportación es a CSV. No hay PDF ni Excel.
+- El servidor web no tiene usuarios ni contraseñas: cualquiera con acceso a tu sesión local puede usarlo.
 - Las bases de datos creadas antes de agregar identificadores de persona no son compatibles; hay que volver a crearlas.

@@ -46,7 +46,8 @@ CREATE TABLE IF NOT EXISTS repartos (
 
 class Almacen:
     def __init__(self, ruta: str) -> None:
-        self._conn = sqlite3.connect(ruta)
+        # El servidor local atiende una petición a la vez, así que una sola conexión basta.
+        self._conn = sqlite3.connect(ruta, check_same_thread=False)
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._conn.executescript(ESQUEMA)
 
@@ -59,6 +60,9 @@ class Almacen:
         valor: Optional[BaseException],
         traza: Optional[TracebackType],
     ) -> None:
+        self.cerrar()
+
+    def cerrar(self) -> None:
         self._conn.close()
 
     def crear_persona(self, clave: str, identificador: str, nombre: str) -> None:
@@ -161,6 +165,40 @@ class Almacen:
                 ],
             )
         return evento_id
+
+    def listar_personas(self) -> List[Tuple[str, str, str]]:
+        """Devuelve (clave, identificador, nombre) de cada persona."""
+        return [
+            tuple(fila)
+            for fila in self._conn.execute(
+                "SELECT clave, identificador, nombre FROM personas ORDER BY nombre, identificador"
+            )
+        ]
+
+    def listar_eventos(self) -> List[Dict[str, object]]:
+        eventos = [
+            {
+                "id": fila[0],
+                "cancion_id": fila[1],
+                "tipo": fila[2],
+                "fecha": fila[3],
+                "monto": Decimal(fila[4]),
+                "reparto": [],
+            }
+            for fila in self._conn.execute(
+                "SELECT id, cancion_id, tipo, fecha, monto FROM eventos ORDER BY id"
+            )
+        ]
+        indice = {evento["id"]: evento for evento in eventos}
+        for evento_id, clave, nombre, monto in self._conn.execute(
+            "SELECT r.evento_id, c.clave, c.nombre, r.monto FROM repartos r"
+            " JOIN colaboradores c ON c.id = r.colaborador_id"
+            " ORDER BY r.evento_id, c.orden"
+        ):
+            indice[evento_id]["reparto"].append(
+                {"clave": clave, "nombre": nombre, "monto": Decimal(monto)}
+            )
+        return eventos
 
     def montos_de_cancion(self, cancion_id: int) -> List[Decimal]:
         return [

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Regalías</title>
+  <link rel="stylesheet" href="/app.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main>
+    <header class="cabecera">
+      <div>
+        <h1>Regalías</h1>
+        <p class="sub">Control de ingresos y reparto por colaborador. Datos guardados en tu computadora.</p>
+      </div>
+    </header>
+
+    <nav class="tabs" role="tablist" aria-label="Secciones">
+      <button class="tab" role="tab" data-tab="personas">Personas</button>
+      <button class="tab" role="tab" data-tab="canciones">Canciones</button>
+      <button class="tab" role="tab" data-tab="eventos">Ingresos</button>
+      <button class="tab" role="tab" data-tab="reportes">Reportes</button>
+    </nav>
+
+    <div id="vista" aria-live="polite"></div>
+  </main>
+</body>
+</html>
